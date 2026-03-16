@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>UNKE Seller Notebook</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <h1>Продажи продавца</h1>
+      <div class="segment">
+        <button id="tab-cart" class="active">Корзина</button>
+        <button id="tab-sales">Продажи</button>
+      </div>
+    </header>
+
+    <section id="view-cart" class="view active">
+      <div class="row">
+        <input id="catalog-search" placeholder="Поиск модели из каталога" />
+        <button id="refresh-catalog">Обновить каталог</button>
+      </div>
+      <p id="catalog-status" class="muted"></p>
+
+      <h2>Каталог</h2>
+      <table class="table" id="catalog-table">
+        <thead><tr><th>Модель</th><th>Цена</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h2>Корзина</h2>
+      <table class="table" id="cart-table">
+        <thead><tr><th>Товар</th><th>Кол-во</th><th>Размер</th><th>Цвет</th><th>Цена</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <textarea id="sale-note" placeholder="Текстовая заметка"></textarea>
+      <label class="photo-label">Фото товара <input id="sale-photo" type="file" accept="image/*" /></label>
+    </section>
+
+    <section id="view-sales" class="view">
+      <div class="row">
+        <input id="sales-date" type="date" />
+        <button id="export-btn">Экспорт Excel</button>
+      </div>
+      <input id="sales-search" placeholder="Поиск по записям" />
+      <p id="day-total"></p>
+      <table class="table" id="sales-table">
+        <thead><tr><th>Дата</th><th>Товары</th><th>Скидка</th><th>Итог</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <footer id="cart-summary">
+      <div>Сумма: <b id="total-before">0 ₽</b></div>
+      <label>Скидка % <input id="discount" type="number" min="0" max="100" value="0" /></label>
+      <div>Итого: <b id="total-after">0 ₽</b></div>
+      <button id="sell-btn">Продать</button>
+    </footer>
+  </main>
+
+  <dialog id="edit-dialog">
+    <form method="dialog" id="edit-form">
+      <h3>Редактирование продажи</h3>
+      <label>Дата и время<input id="edit-datetime" type="datetime-local" /></label>
+      <label>Скидка %<input id="edit-discount" type="number" min="0" max="100" /></label>
+      <label>Заметка<textarea id="edit-note"></textarea></label>
+      <menu>
+        <button value="cancel">Отмена</button>
+        <button id="save-edit" value="default">Сохранить</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>
