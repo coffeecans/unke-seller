@@ -1,42 +1,98 @@
 const state = {
   catalog: [],
+  catalogLast5: [],
   cart: [],
   photoDataUrl: '',
   editingSale: null,
 };
 
-const rub = (v) => `${Number(v).toLocaleString('ru-RU')} ₽`;
-
+const rub = (v) => `${Number(v || 0).toLocaleString('ru-RU')} ₽`;
 const el = (id) => document.getElementById(id);
 
 function switchTab(name) {
-  el('tab-cart').classList.toggle('active', name === 'cart');
-  el('tab-sales').classList.toggle('active', name === 'sales');
-  el('view-cart').classList.toggle('active', name === 'cart');
-  el('view-sales').classList.toggle('active', name === 'sales');
-  el('cart-summary').classList.toggle('hidden', name !== 'cart');
+  const isCart = name === 'cart';
+  el('tab-cart').className = `btn ${isCart ? 'btn-dark' : 'btn-outline-dark'}`;
+  el('tab-sales').className = `btn ${isCart ? 'btn-outline-dark' : 'btn-dark'}`;
+  el('view-cart').classList.toggle('d-none', !isCart);
+  el('view-sales').classList.toggle('d-none', isCart);
+  el('cart-summary').classList.toggle('hidden', !isCart);
 }
 
-async function fetchCatalog() {
-  const q = encodeURIComponent(el('catalog-search').value.trim());
-  const res = await fetch(`/api/catalog?q=${q}`);
+async function fetchCatalog(query = '', limit = '') {
+  const q = encodeURIComponent(query);
+  const l = limit ? `&limit=${limit}` : '';
+  const res = await fetch(`/api/catalog?q=${q}${l}`);
   const data = await res.json();
-  state.catalog = data.items;
-  renderCatalog();
+  return data.items || [];
 }
 
-function renderCatalog() {
-  const tbody = el('catalog-table').querySelector('tbody');
-  tbody.innerHTML = '';
-  for (const item of state.catalog) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${item.model}</td><td>${rub(item.price)}</td><td><button>+</button></td>`;
-    tr.querySelector('button').onclick = () => {
-      state.cart.push({ model: item.model, quantity: 1, size: (item.sizes?.[0] || 'M'), color: (item.colors?.[0] || 'Не указан'), price: item.price });
-      renderCart();
-    };
-    tbody.appendChild(tr);
+async function loadCatalogSnapshot() {
+  state.catalog = await fetchCatalog('');
+  state.catalogLast5 = await fetchCatalog('', 5);
+}
+
+function addToCart(item) {
+  state.cart.push({
+    model: item.model,
+    quantity: 1,
+    size: item.sizes?.[0] || 'M',
+    color: item.colors?.[0] || 'Не указан',
+    price: Number(item.price || 0),
+  });
+  renderCart();
+}
+
+function renderSuggestions(items, query) {
+  const list = el('catalog-suggestions');
+  const empty = el('catalog-empty');
+  list.innerHTML = '';
+  empty.classList.add('d-none');
+
+  if (!items.length) {
+    if (query.trim()) {
+      empty.classList.remove('d-none');
+      empty.innerHTML = `Товара "${query}" нет в каталоге. Добавить новый?<div class="mt-2"><button id="add-manual-btn" class="btn btn-sm btn-warning">Добавить новый товар</button></div>`;
+      el('add-manual-btn').onclick = () => openManualAdd(query.trim());
+    }
+    return;
   }
+
+  items.forEach((item) => {
+    const b = document.createElement('button');
+    b.className = 'list-group-item list-group-item-action suggestion-item';
+    b.innerHTML = `<div class="fw-semibold">${item.model}</div><div class="small text-secondary">${rub(item.price)}</div>`;
+    b.onclick = () => {
+      addToCart(item);
+      el('catalog-search').value = '';
+      renderSuggestions(state.catalogLast5, '');
+    };
+    list.appendChild(b);
+  });
+}
+
+function openManualAdd(query) {
+  const model = prompt('Название модели', query || '');
+  if (!model) return;
+  const priceRaw = prompt('Цена (число)', '0');
+  const price = Number(priceRaw || 0);
+  createManualCatalogItem(model, Number.isFinite(price) ? price : 0);
+}
+
+async function createManualCatalogItem(model, price) {
+  const res = await fetch('/api/catalog/manual', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, price, sizes: ['Не указан'], colors: ['Не указан'] }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || 'Не удалось добавить товар');
+    return;
+  }
+  await loadCatalogSnapshot();
+  addToCart(data.item);
+  renderSuggestions(state.catalogLast5, '');
+  el('catalog-status').textContent = 'Новый товар добавлен в каталог.';
 }
 
 function cartTotals() {
@@ -52,11 +108,11 @@ function renderCart() {
   state.cart.forEach((item, idx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${item.model}</td>
-      <td><input type="number" min="1" value="${item.quantity}"></td>
-      <td><input value="${item.size}"></td>
-      <td><input value="${item.color}"></td>
-      <td><input type="number" min="0" value="${item.price}"></td>
-      <td><button>×</button></td>`;
+      <td><input class="form-control form-control-sm input-mini" type="number" min="1" value="${item.quantity}"></td>
+      <td><input class="form-control form-control-sm" value="${item.size}"></td>
+      <td><input class="form-control form-control-sm" value="${item.color}"></td>
+      <td><input class="form-control form-control-sm input-mini" type="number" min="0" value="${item.price}"></td>
+      <td><button class="btn btn-sm btn-outline-danger">×</button></td>`;
     const [qty, size, color, price] = tr.querySelectorAll('input');
     qty.oninput = () => { item.quantity = Number(qty.value || 1); updateTotals(); };
     size.oninput = () => { item.size = size.value; };
@@ -108,7 +164,7 @@ function renderSales(items, dayTotal) {
   items.forEach((sale) => {
     const tr = document.createElement('tr');
     const itemText = sale.items.map((i) => `${i.model} x${i.quantity}, ${i.size}, ${i.color}, ${rub(i.price)}`).join('<br>');
-    tr.innerHTML = `<td>${new Date(sale.created_at).toLocaleString('ru-RU')}</td><td>${itemText}</td><td>${sale.discount_percent}%</td><td>${rub(sale.total_after)}</td><td><button>Ред.</button></td>`;
+    tr.innerHTML = `<td>${new Date(sale.created_at).toLocaleString('ru-RU')}</td><td>${itemText}</td><td>${sale.discount_percent}%</td><td>${rub(sale.total_after)}</td><td><button class="btn btn-sm btn-outline-primary">Ред.</button></td>`;
     tr.querySelector('button').onclick = () => openEdit(sale);
     tbody.appendChild(tr);
   });
@@ -141,13 +197,24 @@ async function saveEdit(e) {
 }
 
 async function refreshCatalogFromSite() {
+  el('catalog-status').textContent = 'Обновление каталога...';
   const res = await fetch('/api/catalog/refresh', { method: 'POST' });
   const data = await res.json();
-  state.catalog = data.items;
-  renderCatalog();
+  await loadCatalogSnapshot();
+  renderSuggestions(state.catalogLast5, '');
   el('catalog-status').textContent = data.source === 'scraped'
-    ? 'Каталог обновлен с unke.store.'
+    ? `Каталог обновлен с unke.store. Найдено товаров: ${data.count}.`
     : `Не удалось получить данные сайта, используется локальный каталог. ${data.warning || ''}`;
+}
+
+async function handleCatalogInput() {
+  const query = el('catalog-search').value.trim();
+  if (!query) {
+    renderSuggestions(state.catalogLast5, '');
+    return;
+  }
+  const found = await fetchCatalog(query);
+  renderSuggestions(found, query);
 }
 
 function init() {
@@ -156,7 +223,8 @@ function init() {
 
   el('tab-cart').onclick = () => switchTab('cart');
   el('tab-sales').onclick = () => { switchTab('sales'); fetchSales(); };
-  el('catalog-search').oninput = fetchCatalog;
+  el('catalog-search').onfocus = () => renderSuggestions(state.catalogLast5, '');
+  el('catalog-search').oninput = handleCatalogInput;
   el('sales-search').oninput = fetchSales;
   el('sales-date').onchange = fetchSales;
   el('discount').oninput = updateTotals;
@@ -172,8 +240,12 @@ function init() {
   };
   el('save-edit').onclick = saveEdit;
 
-  fetchCatalog();
+  loadCatalogSnapshot().then(() => renderSuggestions(state.catalogLast5, '')).catch(() => {
+    el('catalog-status').textContent = 'Не удалось загрузить каталог.';
+  });
   fetchSales();
+  renderCart();
+  switchTab('cart');
 }
 
 init();

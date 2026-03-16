@@ -59,40 +59,128 @@ def save_catalog(catalog):
     CATALOG_PATH.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def scrape_catalog():
-    req = Request("https://unke.store/catalog", headers={"User-Agent": "Mozilla/5.0"})
-    with urlopen(req, timeout=20) as resp:
-        html = resp.read().decode("utf-8", errors="ignore")
+def _parse_price(raw):
+    if raw is None:
+        return None
+    cleaned = re.sub(r"[^0-9,\.]", "", str(raw)).replace(",", ".")
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
 
-    scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S | re.I)
+
+def _extract_products_from_html(html):
+    products = []
+
+    for script_body in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.I | re.S):
+        text = script_body.strip()
+        try:
+            data = json.loads(text)
+        except Exception:
+            continue
+        stack = data if isinstance(data, list) else [data]
+        while stack:
+            item = stack.pop()
+            if isinstance(item, dict):
+                if item.get("@type") == "Product" and item.get("name"):
+                    price = _parse_price((item.get("offers") or {}).get("price") if isinstance(item.get("offers"), dict) else None)
+                    if price is None:
+                        price = _parse_price(item.get("price"))
+                    products.append({"model": item.get("name", "").strip(), "price": price})
+                for val in item.values():
+                    if isinstance(val, (dict, list)):
+                        stack.append(val)
+            elif isinstance(item, list):
+                stack.extend(item)
+
+    card_matches = re.findall(r'<li[^>]*class="[^"]*product[^"]*"[^>]*>(.*?)</li>', html, flags=re.I | re.S)
+    for card in card_matches:
+        name_m = re.search(r'class="[^"]*woocommerce-loop-product__title[^"]*"[^>]*>(.*?)<', card, flags=re.I | re.S)
+        if not name_m:
+            name_m = re.search(r'<h2[^>]*>(.*?)<', card, flags=re.I | re.S)
+        if not name_m:
+            continue
+        model = re.sub(r"<[^>]+>", "", name_m.group(1)).strip()
+        price_m = re.search(r'class="[^"]*price[^"]*"[^>]*>(.*?)</span>', card, flags=re.I | re.S)
+        raw_price = re.sub(r"<[^>]+>", "", price_m.group(1)) if price_m else ""
+        price = _parse_price(raw_price)
+        products.append({"model": model, "price": price})
+
+    cleaned = []
+    seen = set()
+    for p in products:
+        model = p.get("model", "").strip()
+        price = p.get("price")
+        if not model or model in seen:
+            continue
+        seen.add(model)
+        cleaned.append({"model": model, "price": float(price or 0)})
+    return cleaned
+
+
+def scrape_catalog():
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/123 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    all_products = []
+    seen = set()
+    max_pages = 30
+
+    for page in range(1, max_pages + 1):
+        page_url = "https://unke.store/catalog" if page == 1 else f"https://unke.store/catalog/page/{page}/"
+        req = Request(page_url, headers=headers)
+        with urlopen(req, timeout=25) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+
+        parsed = _extract_products_from_html(html)
+        added_on_page = 0
+        for p in parsed:
+            if p["model"] in seen:
+                continue
+            seen.add(p["model"])
+            all_products.append(p)
+            added_on_page += 1
+
+        if page > 1 and added_on_page == 0:
+            break
+
+    if len(all_products) < 12:
+        raise RuntimeError("Каталог не удалось распарсить полностью")
+
     catalog = []
-    for script in scripts:
-        if "price" in script and "name" in script:
-            chunks = re.findall(r"\{[^{}]{20,400}\}", script)
-            for ch in chunks:
-                name_m = re.search(r'"name"\s*:\s*"([^"]+)"', ch)
-                price_m = re.search(r'"price"\s*:\s*"?([0-9\.,]+)"?', ch)
-                if not name_m or not price_m:
-                    continue
-                model = name_m.group(1).strip()
-                raw_price = price_m.group(1).replace(",", ".")
-                try:
-                    price = float(raw_price)
-                except ValueError:
-                    continue
-                if any(x["model"] == model for x in catalog):
-                    continue
-                catalog.append({
-                    "id": f"scrape-{len(catalog)+1}",
-                    "model": model,
-                    "price": price,
-                    "sizes": ["XS", "S", "M", "L", "XL"],
-                    "colors": ["Не указан"],
-                })
-    if not catalog:
-        raise RuntimeError("Каталог не удалось распарсить")
+    for idx, p in enumerate(all_products, start=1):
+        catalog.append({
+            "id": f"scrape-{idx}",
+            "model": p["model"],
+            "price": p["price"],
+            "sizes": ["XS", "S", "M", "L", "XL"],
+            "colors": ["Не указан"],
+        })
+
     save_catalog(catalog)
     return catalog
+
+
+def add_custom_catalog_item(model, price, sizes=None, colors=None):
+    catalog = load_catalog()
+    model = model.strip()
+    if not model:
+        raise ValueError("model required")
+    if any(item["model"].lower() == model.lower() for item in catalog):
+        raise ValueError("item already exists")
+    new_item = {
+        "id": f"manual-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+        "model": model,
+        "price": float(price or 0),
+        "sizes": sizes or ["Не указан"],
+        "colors": colors or ["Не указан"],
+    }
+    catalog.append(new_item)
+    save_catalog(catalog)
+    return new_item
 
 
 def query_sales(date_value=None, search=""):
@@ -209,9 +297,12 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/catalog":
             query = parse_qs(parsed.query).get("q", [""])[0].lower().strip()
+            limit_raw = parse_qs(parsed.query).get("limit", [""])[0].strip()
             catalog = load_catalog()
             if query:
                 catalog = [c for c in catalog if query in c["model"].lower()]
+            if limit_raw.isdigit() and int(limit_raw) > 0:
+                catalog = catalog[-int(limit_raw):][::-1]
             self._json(200, {"items": catalog})
             return
 
@@ -263,10 +354,24 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/catalog/refresh":
             try:
                 catalog = scrape_catalog()
-                self._json(200, {"items": catalog, "source": "scraped"})
+                self._json(200, {"items": catalog, "source": "scraped", "count": len(catalog)})
             except Exception as e:
                 catalog = load_catalog()
-                self._json(200, {"items": catalog, "source": "fallback", "warning": str(e)})
+                self._json(200, {"items": catalog, "source": "fallback", "count": len(catalog), "warning": str(e)})
+            return
+
+        if parsed.path == "/api/catalog/manual":
+            body = self._read_json()
+            try:
+                item = add_custom_catalog_item(
+                    model=body.get("model", ""),
+                    price=body.get("price", 0),
+                    sizes=body.get("sizes") or ["Не указан"],
+                    colors=body.get("colors") or ["Не указан"],
+                )
+                self._json(201, {"item": item})
+            except ValueError as e:
+                self._json(400, {"error": str(e)})
             return
 
         if parsed.path == "/api/sales":
