@@ -26,8 +26,6 @@
             <button id="refresh-catalog" class="btn btn-outline-secondary">Обновить каталог</button>
           </div>
           <div id="catalog-status" class="small text-secondary"></div>
-          <div id="catalog-suggestions" class="list-group mt-2 d-none"></div>
-          <div id="catalog-empty" class="alert alert-warning py-2 px-3 mt-2 d-none"></div>
         </div>
       </div>
 
@@ -76,6 +74,21 @@
         <button id="sell-btn" class="btn btn-primary w-100 mt-2">Продать</button>
       </div>
     </footer>
+
+
+    <div id="search-popup" class="search-popup d-none">
+      <div class="search-popup-card card border-0 shadow">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="fw-semibold">Результаты поиска на unke.store</div>
+            <button id="close-search-popup" class="btn btn-sm btn-outline-secondary">✕</button>
+          </div>
+          <div id="site-search-results" class="list-group"></div>
+          <div id="site-search-empty" class="alert alert-warning mt-2 py-2 px-3 d-none"></div>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <dialog id="edit-dialog" class="rounded border-0 shadow">

@@ -229,6 +229,63 @@ def scrape_catalog():
     return catalog
 
 
+
+
+def _live_search_unke_site(query, headers):
+    query = query.strip()
+    if not query:
+        return []
+
+    # 1) WooCommerce Store API search
+    try:
+        payload = _fetch_json(f"https://unke.store/wp-json/wc/store/products?search={query}&per_page=20", headers)
+        if isinstance(payload, list):
+            results = []
+            for item in payload:
+                prices = item.get("prices") or {}
+                raw_price = prices.get("price") or prices.get("regular_price") or item.get("price")
+                if isinstance(raw_price, str) and raw_price.isdigit() and len(raw_price) > 3:
+                    minor = prices.get("currency_minor_unit")
+                    if isinstance(minor, int):
+                        raw_price = int(raw_price) / (10 ** minor)
+                images = item.get("images") or []
+                image = images[0].get("src") if images and isinstance(images[0], dict) else ""
+                results.append({
+                    "id": item.get("id") or f"live-{len(results)+1}",
+                    "model": item.get("name") or "",
+                    "price": float(_parse_price(raw_price) or 0),
+                    "image": image,
+                    "description": re.sub(r"<[^>]+>", "", (item.get("short_description") or item.get("description") or "")).strip(),
+                    "sizes": ["XS", "S", "M", "L", "XL"],
+                    "colors": ["Не указан"],
+                })
+            normalized = []
+            seen = set()
+            for r in results:
+                key = r["model"].strip().lower()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                normalized.append(r)
+            if normalized:
+                return normalized
+    except Exception:
+        pass
+
+    # 2) Fallback to local catalog search
+    local = load_catalog()
+    ql = query.lower()
+    local = [x for x in local if ql in x.get("model", "").lower()][:20]
+    return [{
+        "id": x.get("id"),
+        "model": x.get("model"),
+        "price": float(x.get("price", 0)),
+        "image": "",
+        "description": "",
+        "sizes": x.get("sizes") or ["Не указан"],
+        "colors": x.get("colors") or ["Не указан"],
+    } for x in local]
+
 def add_custom_catalog_item(model, price, sizes=None, colors=None):
     catalog = load_catalog()
     model = model.strip()
@@ -369,6 +426,16 @@ class Handler(BaseHTTPRequestHandler):
             if limit_raw.isdigit() and int(limit_raw) > 0:
                 catalog = catalog[-int(limit_raw):][::-1]
             self._json(200, {"items": catalog})
+            return
+
+        if parsed.path == "/api/catalog/site-search":
+            query = parse_qs(parsed.query).get("q", [""])[0].strip()
+            headers = {
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/123 Safari/537.36",
+                "Accept": "application/json,text/html,application/xhtml+xml",
+            }
+            items = _live_search_unke_site(query, headers)
+            self._json(200, {"items": items})
             return
 
         if parsed.path == "/api/sales":

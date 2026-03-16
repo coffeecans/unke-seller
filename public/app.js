@@ -9,14 +9,12 @@ const state = {
 const rub = (v) => `${Number(v || 0).toLocaleString('ru-RU')} ₽`;
 const el = (id) => document.getElementById(id);
 
-
 function showSuggestions() {
-  el('catalog-suggestions').classList.remove('d-none');
+  el('search-popup').classList.remove('d-none');
 }
 
 function hideSuggestions() {
-  el('catalog-suggestions').classList.add('d-none');
-  el('catalog-empty').classList.add('d-none');
+  el('search-popup').classList.add('d-none');
 }
 
 function syncLayoutForFooter() {
@@ -43,6 +41,13 @@ async function fetchCatalog(query = '', limit = '') {
   return data.items || [];
 }
 
+async function fetchSiteSearch(query = '') {
+  const q = encodeURIComponent(query);
+  const res = await fetch(`/api/catalog/site-search?q=${q}`);
+  const data = await res.json();
+  return data.items || [];
+}
+
 async function loadCatalogSnapshot() {
   state.catalog = await fetchCatalog('');
   state.catalogLast5 = await fetchCatalog('', 5);
@@ -59,33 +64,36 @@ function addToCart(item) {
   renderCart();
 }
 
-function renderSuggestions(items, query) {
-  const list = el('catalog-suggestions');
-  const empty = el('catalog-empty');
+function renderSearchPopup(items, query) {
+  const list = el('site-search-results');
+  const empty = el('site-search-empty');
   list.innerHTML = '';
   empty.classList.add('d-none');
-  showSuggestions();
 
   if (!items.length) {
     if (query.trim()) {
       empty.classList.remove('d-none');
-      empty.innerHTML = `Товара "${query}" нет в каталоге. Добавить новый?<div class="mt-2"><button id="add-manual-btn" class="btn btn-sm btn-warning">Добавить новый товар</button></div>`;
+      empty.innerHTML = `Товара "${query}" нет в выдаче сайта. Добавить новый?<div class="mt-2"><button id="add-manual-btn" class="btn btn-sm btn-warning">Добавить новый товар</button></div>`;
       el('add-manual-btn').onclick = () => openManualAdd(query.trim());
+    } else {
+      empty.classList.remove('d-none');
+      empty.textContent = 'Начните вводить название товара для поиска на сайте.';
     }
     return;
   }
 
   items.forEach((item) => {
-    const b = document.createElement('button');
-    b.className = 'list-group-item list-group-item-action suggestion-item';
-    b.innerHTML = `<div class="fw-semibold">${item.model}</div><div class="small text-secondary">${rub(item.price)}</div>`;
-    b.onclick = () => {
+    const row = document.createElement('button');
+    row.className = 'list-group-item list-group-item-action d-flex gap-2 align-items-start';
+    const image = item.image ? `<img src="${item.image}" class="search-thumb" alt="${item.model}">` : '<div class="search-thumb search-thumb-empty">—</div>';
+    const description = item.description ? `<div class="small text-secondary text-truncate-2">${item.description}</div>` : '';
+    row.innerHTML = `${image}<div class="flex-grow-1 text-start"><div class="fw-semibold">${item.model}</div>${description}<div class="fw-semibold mt-1">${rub(item.price)}</div></div>`;
+    row.onclick = () => {
       addToCart(item);
       el('catalog-search').value = '';
-      renderSuggestions(state.catalogLast5, '');
       hideSuggestions();
     };
-    list.appendChild(b);
+    list.appendChild(row);
   });
 }
 
@@ -110,7 +118,6 @@ async function createManualCatalogItem(model, price) {
   }
   await loadCatalogSnapshot();
   addToCart(data.item);
-  renderSuggestions(state.catalogLast5, '');
   hideSuggestions();
   el('catalog-status').textContent = 'Новый товар добавлен в каталог.';
 }
@@ -226,14 +233,14 @@ async function refreshCatalogFromSite() {
     : `Не удалось получить данные сайта, используется локальный каталог. ${data.warning || ''}`;
 }
 
+let searchTimer = null;
 async function handleCatalogInput() {
   const query = el('catalog-search').value.trim();
-  if (!query) {
-    renderSuggestions(state.catalogLast5, '');
-    return;
-  }
-  const found = await fetchCatalog(query);
-  renderSuggestions(found, query);
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    const items = query ? await fetchSiteSearch(query) : state.catalogLast5;
+    renderSearchPopup(items, query);
+  }, 220);
 }
 
 function init() {
@@ -242,9 +249,16 @@ function init() {
 
   el('tab-cart').onclick = () => switchTab('cart');
   el('tab-sales').onclick = () => { switchTab('sales'); fetchSales(); };
-  el('catalog-search').onfocus = () => { renderSuggestions(state.catalogLast5, ''); showSuggestions(); };
+  el('catalog-search').onfocus = () => {
+    showSuggestions();
+    renderSearchPopup(state.catalogLast5, '');
+  };
   el('catalog-search').oninput = handleCatalogInput;
-  el('catalog-search').onblur = () => setTimeout(hideSuggestions, 150);
+  el('close-search-popup').onclick = hideSuggestions;
+  el('search-popup').onclick = (e) => {
+    if (e.target.id === 'search-popup') hideSuggestions();
+  };
+
   el('sales-search').oninput = fetchSales;
   el('sales-date').onchange = fetchSales;
   el('discount').oninput = updateTotals;
@@ -269,6 +283,5 @@ function init() {
   syncLayoutForFooter();
   window.addEventListener('resize', syncLayoutForFooter);
 }
-
 
 init();

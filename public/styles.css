@@ -12,3 +12,47 @@ body { background: #f6f8fb; }
 .dialog-backdrop { background: rgba(0,0,0,.3); }
 
 #catalog-suggestions.d-none { display: none !important; }
+
+.search-popup {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 80px 12px 12px;
+}
+
+.search-popup-card {
+  width: min(480px, 100%);
+  max-height: min(70vh, 620px);
+  overflow: hidden;
+}
+
+#site-search-results {
+  max-height: calc(min(70vh, 620px) - 110px);
+  overflow-y: auto;
+}
+
+.search-thumb {
+  width: 56px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+}
+
+.search-thumb-empty {
+  display: grid;
+  place-items: center;
+  color: #909090;
+  background: #f2f2f2;
+}
+
+.text-truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
