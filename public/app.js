@@ -9,6 +9,23 @@ const state = {
 const rub = (v) => `${Number(v || 0).toLocaleString('ru-RU')} ₽`;
 const el = (id) => document.getElementById(id);
 
+
+function showSuggestions() {
+  el('catalog-suggestions').classList.remove('d-none');
+}
+
+function hideSuggestions() {
+  el('catalog-suggestions').classList.add('d-none');
+  el('catalog-empty').classList.add('d-none');
+}
+
+function syncLayoutForFooter() {
+  const footer = el('cart-summary');
+  if (!footer) return;
+  const h = Math.ceil(footer.getBoundingClientRect().height || 220);
+  document.documentElement.style.setProperty('--cart-summary-height', `${h}px`);
+}
+
 function switchTab(name) {
   const isCart = name === 'cart';
   el('tab-cart').className = `btn ${isCart ? 'btn-dark' : 'btn-outline-dark'}`;
@@ -47,6 +64,7 @@ function renderSuggestions(items, query) {
   const empty = el('catalog-empty');
   list.innerHTML = '';
   empty.classList.add('d-none');
+  showSuggestions();
 
   if (!items.length) {
     if (query.trim()) {
@@ -65,6 +83,7 @@ function renderSuggestions(items, query) {
       addToCart(item);
       el('catalog-search').value = '';
       renderSuggestions(state.catalogLast5, '');
+      hideSuggestions();
     };
     list.appendChild(b);
   });
@@ -92,6 +111,7 @@ async function createManualCatalogItem(model, price) {
   await loadCatalogSnapshot();
   addToCart(data.item);
   renderSuggestions(state.catalogLast5, '');
+  hideSuggestions();
   el('catalog-status').textContent = 'Новый товар добавлен в каталог.';
 }
 
@@ -201,7 +221,6 @@ async function refreshCatalogFromSite() {
   const res = await fetch('/api/catalog/refresh', { method: 'POST' });
   const data = await res.json();
   await loadCatalogSnapshot();
-  renderSuggestions(state.catalogLast5, '');
   el('catalog-status').textContent = data.source === 'scraped'
     ? `Каталог обновлен с unke.store. Найдено товаров: ${data.count}.`
     : `Не удалось получить данные сайта, используется локальный каталог. ${data.warning || ''}`;
@@ -223,8 +242,9 @@ function init() {
 
   el('tab-cart').onclick = () => switchTab('cart');
   el('tab-sales').onclick = () => { switchTab('sales'); fetchSales(); };
-  el('catalog-search').onfocus = () => renderSuggestions(state.catalogLast5, '');
+  el('catalog-search').onfocus = () => { renderSuggestions(state.catalogLast5, ''); showSuggestions(); };
   el('catalog-search').oninput = handleCatalogInput;
+  el('catalog-search').onblur = () => setTimeout(hideSuggestions, 150);
   el('sales-search').oninput = fetchSales;
   el('sales-date').onchange = fetchSales;
   el('discount').oninput = updateTotals;
@@ -240,12 +260,15 @@ function init() {
   };
   el('save-edit').onclick = saveEdit;
 
-  loadCatalogSnapshot().then(() => renderSuggestions(state.catalogLast5, '')).catch(() => {
+  loadCatalogSnapshot().catch(() => {
     el('catalog-status').textContent = 'Не удалось загрузить каталог.';
   });
   fetchSales();
   renderCart();
   switchTab('cart');
+  syncLayoutForFooter();
+  window.addEventListener('resize', syncLayoutForFooter);
 }
+
 
 init();

@@ -71,6 +71,22 @@ def _parse_price(raw):
         return None
 
 
+def _normalize_products(products):
+    cleaned = []
+    seen = set()
+    for p in products:
+        model = (p.get("model") or "").strip()
+        price = _parse_price(p.get("price"))
+        if not model:
+            continue
+        key = model.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append({"model": model, "price": float(price or 0)})
+    return cleaned
+
+
 def _extract_products_from_html(html):
     products = []
 
@@ -85,10 +101,8 @@ def _extract_products_from_html(html):
             item = stack.pop()
             if isinstance(item, dict):
                 if item.get("@type") == "Product" and item.get("name"):
-                    price = _parse_price((item.get("offers") or {}).get("price") if isinstance(item.get("offers"), dict) else None)
-                    if price is None:
-                        price = _parse_price(item.get("price"))
-                    products.append({"model": item.get("name", "").strip(), "price": price})
+                    offers = item.get("offers") if isinstance(item.get("offers"), dict) else {}
+                    products.append({"model": item.get("name", ""), "price": offers.get("price") or item.get("price")})
                 for val in item.values():
                     if isinstance(val, (dict, list)):
                         stack.append(val)
@@ -103,52 +117,103 @@ def _extract_products_from_html(html):
         if not name_m:
             continue
         model = re.sub(r"<[^>]+>", "", name_m.group(1)).strip()
-        price_m = re.search(r'class="[^"]*price[^"]*"[^>]*>(.*?)</span>', card, flags=re.I | re.S)
+        price_m = re.search(r'class="[^"]*price[^"]*"[^>]*>(.*?)</', card, flags=re.I | re.S)
         raw_price = re.sub(r"<[^>]+>", "", price_m.group(1)) if price_m else ""
-        price = _parse_price(raw_price)
-        products.append({"model": model, "price": price})
+        products.append({"model": model, "price": raw_price})
 
-    cleaned = []
+    return _normalize_products(products)
+
+
+def _extract_products_from_store_api(payload):
+    products = []
+    for item in payload:
+        name = item.get("name")
+        prices = item.get("prices") or {}
+        regular = prices.get("price") or prices.get("regular_price") or item.get("price")
+        # Woo Store API часто отдает цену в minor units
+        if isinstance(regular, str) and regular.isdigit() and len(regular) > 3:
+            cur_minor = prices.get("currency_minor_unit")
+            if isinstance(cur_minor, int):
+                regular = int(regular) / (10 ** cur_minor)
+        products.append({"model": name, "price": regular})
+    return _normalize_products(products)
+
+
+def _fetch_json(url, headers, timeout=25):
+    req = Request(url, headers=headers)
+    with urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8", errors="ignore"))
+
+
+def _scrape_from_wc_store_api(headers):
+    all_products = []
     seen = set()
-    for p in products:
-        model = p.get("model", "").strip()
-        price = p.get("price")
-        if not model or model in seen:
-            continue
-        seen.add(model)
-        cleaned.append({"model": model, "price": float(price or 0)})
-    return cleaned
+    for page in range(1, 21):
+        url = f"https://unke.store/wp-json/wc/store/products?per_page=100&page={page}"
+        payload = _fetch_json(url, headers)
+        if not isinstance(payload, list) or not payload:
+            break
+        parsed = _extract_products_from_store_api(payload)
+        added = 0
+        for p in parsed:
+            key = p["model"].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            all_products.append(p)
+            added += 1
+        if added == 0:
+            break
+    return all_products
+
+
+def _scrape_from_catalog_pages(headers):
+    all_products = []
+    seen = set()
+    for page in range(1, 31):
+        page_url = "https://unke.store/catalog" if page == 1 else f"https://unke.store/catalog/page/{page}/"
+        req = Request(page_url, headers=headers)
+        with urlopen(req, timeout=25) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+        parsed = _extract_products_from_html(html)
+        added = 0
+        for p in parsed:
+            key = p["model"].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            all_products.append(p)
+            added += 1
+        if page > 1 and added == 0:
+            break
+    return all_products
 
 
 def scrape_catalog():
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/123 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml",
+        "Accept": "application/json,text/html,application/xhtml+xml",
     }
+
+    errors = []
     all_products = []
-    seen = set()
-    max_pages = 30
 
-    for page in range(1, max_pages + 1):
-        page_url = "https://unke.store/catalog" if page == 1 else f"https://unke.store/catalog/page/{page}/"
-        req = Request(page_url, headers=headers)
-        with urlopen(req, timeout=25) as resp:
-            html = resp.read().decode("utf-8", errors="ignore")
+    # 1) Основной способ: WooCommerce Store API (возвращает полный каталог по страницам)
+    try:
+        all_products = _scrape_from_wc_store_api(headers)
+    except Exception as e:
+        errors.append(f"store_api: {e}")
 
-        parsed = _extract_products_from_html(html)
-        added_on_page = 0
-        for p in parsed:
-            if p["model"] in seen:
-                continue
-            seen.add(p["model"])
-            all_products.append(p)
-            added_on_page += 1
-
-        if page > 1 and added_on_page == 0:
-            break
+    # 2) Резервный способ: HTML пагинация /catalog/page/N/
+    if len(all_products) < 12:
+        try:
+            all_products = _scrape_from_catalog_pages(headers)
+        except Exception as e:
+            errors.append(f"html_pages: {e}")
 
     if len(all_products) < 12:
-        raise RuntimeError("Каталог не удалось распарсить полностью")
+        reason = "; ".join(errors) if errors else "недостаточно товаров"
+        raise RuntimeError(f"Каталог не удалось распарсить полностью ({reason})")
 
     catalog = []
     for idx, p in enumerate(all_products, start=1):
