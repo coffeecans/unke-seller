@@ -1,0 +1,24 @@
+:root { font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #f4f4f6; }
+.app { max-width: 480px; margin: 0 auto; min-height: 100vh; padding: 10px; padding-bottom: 180px; }
+.top { position: sticky; top: 0; background: #f4f4f6; padding-bottom: 8px; z-index: 2; }
+h1 { font-size: 20px; margin: 6px 0; }
+.segment { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.segment button { border: 1px solid #aaa; border-radius: 8px; background: #fff; padding: 10px; }
+.segment button.active { background: #222; color: #fff; }
+.view { display: none; }
+.view.active { display: block; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin: 8px 0; }
+input, textarea, button { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #b9b9c1; font-size: 14px; }
+textarea { min-height: 72px; }
+.table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; background: #fff; margin-bottom: 10px; }
+.table th, .table td { border: 1px solid #ddd; padding: 6px; vertical-align: top; word-wrap: break-word; }
+.table td button { padding: 4px; font-size: 12px; }
+.muted { font-size: 12px; color: #555; }
+#cart-summary { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(480px, 100%); background: #fff; border-top: 1px solid #ddd; padding: 10px; display: grid; gap: 8px; }
+#cart-summary.hidden { display: none; }
+.photo-label { display: block; margin: 8px 0; }
+#day-total { font-weight: 700; }
+dialog { width: 90%; max-width: 440px; border: 1px solid #ddd; border-radius: 10px; }
+menu { display: flex; gap: 8px; justify-content: flex-end; padding: 0; }
