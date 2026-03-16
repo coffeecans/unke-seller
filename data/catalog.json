@@ -1,0 +1,61 @@
+[
+  {
+    "id": "seed-1",
+    "model": "Платье Evening Midi",
+    "price": 12990,
+    "sizes": [
+      "XS",
+      "S",
+      "M",
+      "L"
+    ],
+    "colors": [
+      "Черный",
+      "Бежевый"
+    ]
+  },
+  {
+    "id": "seed-2",
+    "model": "Жакет Urban Tailor",
+    "price": 15990,
+    "sizes": [
+      "S",
+      "M",
+      "L"
+    ],
+    "colors": [
+      "Серый",
+      "Молочный"
+    ]
+  },
+  {
+    "id": "seed-3",
+    "model": "Брюки Straight Fit",
+    "price": 8990,
+    "sizes": [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      "Темно-синий",
+      "Черный"
+    ]
+  },
+  {
+    "id": "seed-4",
+    "model": "Рубашка Soft Cotton",
+    "price": 7490,
+    "sizes": [
+      "S",
+      "M",
+      "L"
+    ],
+    "colors": [
+      "Белый",
+      "Голубой"
+    ]
+  }
+]
